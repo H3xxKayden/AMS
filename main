@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AMS Certificate Validator — Sheet CSV Sync</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{ --bg:#0b1020; --grad1:#5eead4; --grad2:#a78bfa; --grad3:#60a5fa; }
+    body{
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", "Helvetica Neue", Arial;
+      background:
+        radial-gradient(1200px 800px at 10% 10%, var(--grad1) 0%, rgba(94,234,212,0) 60%),
+        radial-gradient(1200px 800px at 90% 20%, var(--grad2) 0%, rgba(167,139,250,0) 60%),
+        radial-gradient(1000px 700px at 50% 90%, var(--grad3) 0%, rgba(96,165,250,0) 60%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .glass{background:rgba(255,255,255,.1);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 40px rgba(0,0,0,.25)}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;opacity:0;pointer-events:none;transition:.25s}
+    .modal.active{opacity:1;pointer-events:auto}
+    .modal-content{transform:translateY(12px) scale(.98);transition:.25s}
+    .modal.active .modal-content{transform:translateY(0) scale(1)}
+    .number-input::-webkit-inner-spin-button,.number-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+    .number-input{-moz-appearance:textfield}
+    .badge{background:linear-gradient(135deg,#34d399,#10b981);color:white}
+    .pill{background:linear-gradient(135deg,#60a5fa,#6366f1);color:white}
+    .tab-btn[aria-selected="true"]{background:rgba(255,255,255,.2); color:#fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);}
+    .tab-btn{color:rgba(255,255,255,.9);}
+    .hint{color:rgba(255,255,255,.65)}
+    .ring-focus:focus{outline:none; box-shadow:0 0 0 3px rgba(255,255,255,.35)}
+    .note{font-size:.8rem}
+    .opt{cursor:pointer}
+  </style>
+</head>
+<body class="p-5">
+  <div class="max-w-5xl mx-auto">
+    <!-- Header -->
+    <header class="text-center mb-8 pt-4">
+      <div class="inline-flex items-center gap-4">
+        <div class="h-12 w-12 rounded-xl flex items-center justify-center badge shadow-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <div class="text-left">
+          <h1 class="text-4xl font-extrabold tracking-tight text-white">AMS Certificate Validator</h1>
+        </div>
+      </div>
+    </header>
+
+    <!-- Validator -->
+    <section class="glass rounded-2xl p-6 mb-6">
+      <div class="flex items-center justify-between mb-4 gap-3">
+        <h2 class="text-2xl font-bold text-white">Validate your certificate</h2>
+        <div class="flex items-center gap-2">
+          <button id="refreshBtn" class="pill text-xs px-3 py-1 rounded hover:opacity-90 transition">Clear</button>
+          <button id="userSyncBtn" class="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-1 rounded transition">Sync</button>
+          <span id="syncStatus" class="text-xs px-2 py-1 rounded bg-white/10 text-white/80">Ready</span>
+        </div>
+      </div>
+      <p class="hint mb-5">Enter the 4‑digit code printed on your certificate.</p>
+
+      <div class="bg-white/10 p-5 rounded-xl mb-4">
+        <label for="lookupCode" class="block text-white/90 mb-2">Certificate Code</label>
+        <div class="flex gap-2">
+          <input id="lookupCode" type="number" inputmode="numeric" autocomplete="one-time-code"
+                 class="number-input bg-white/20 text-white p-3 text-center text-2xl rounded-lg flex-1 ring-focus"
+                 placeholder="0000" min="0" max="9999"/>
+          <button id="lookupBtn" class="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white px-6 py-3 rounded-lg transition font-semibold">
+            Validate
+          </button>
+        </div>
+        <p class="hint text-sm mt-2">Tip: Press Enter to validate.</p>
+      </div>
+
+      <div id="validContainer" class="hidden rounded-xl border border-emerald-400/30 p-5 bg-emerald-400/10">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="h-9 w-9 rounded-lg flex items-center justify-center bg-emerald-500 text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-emerald-200">Certificate Verified</h3>
+        </div>
+        <div id="validContent" class="whitespace-pre-line text-white bg-white/10 rounded-lg p-4"></div>
+        <div class="mt-4 flex items-center justify-between text-white/70 text-sm">
+          <span id="validMeta"></span>
+          <button id="copyDetails" class="text-emerald-300 hover:text-emerald-200 underline">Copy details</button>
+        </div>
+      </div>
+
+      <div id="invalidContainer" class="hidden rounded-xl border border-rose-400/30 p-5 bg-rose-400/10">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="h-9 w-9 rounded-lg flex items-center justify-center bg-rose-500 text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M4.93 4.93l14.14 14.14"/>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-rose-200">Code not found</h3>
+        </div>
+        <p class="text-white/80">Check the digits and try again. If it continues, contact the issuer.</p>
+      </div>
+    </section>
+
+    <!-- Actions -->
+    <div class="flex flex-col md:flex-row gap-3 mb-6">
+      <button id="openAdminBtn" type="button" aria-haspopup="dialog" aria-controls="adminLoginModal"
+              class="glass rounded-xl p-4 w-full flex items-center justify-center gap-2 hover:bg-white/20 transition">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+        <span class="text-white text-lg font-semibold">Admin Console</span>
+      </button>
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="adminLoginModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="adminLoginTitle">
+      <div class="modal-content glass rounded-2xl p-6 w-full max-w-md mx-4">
+        <div class="flex justify-between items-center mb-4">
+          <h2 id="adminLoginTitle" class="text-2xl font-bold text-white">Admin Login</h2>
+          <button id="closeLoginModal" class="text-white/90 hover:text-white" aria-label="Close">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="bg-white/10 p-5 rounded-lg space-y-3">
+          <p class="text-white">Enter the admin password to manage settings and add codes.</p>
+          <form id="adminForm" class="flex gap-2">
+            <input id="adminPassword" type="password" placeholder="Password"
+                   class="bg-white/20 text-white p-3 rounded-lg flex-1 ring-focus" autocomplete="current-password"/>
+            <button id="adminUnlockBtn" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition">Unlock</button>
+          </form>
+          <p id="adminPasswordError" class="text-rose-300 hidden">Incorrect password. Try again.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin Console Modal -->
+    <div id="adminConsoleModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="adminConsoleTitle">
+      <div class="modal-content glass rounded-2xl p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+          <div class="flex items-center gap-2">
+            <h2 id="adminConsoleTitle" class="text-2xl font-bold text-white">Certificate Admin</h2>
+            <span id="adminLockBadge" class="text-xs px-2 py-1 rounded bg-emerald-400/20 text-emerald-200">Unlocked</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="adminSyncStatus" class="text-xs px-2 py-1 rounded bg-white/10 text-white/80">Synced 0 • —</span>
+            <button id="adminSyncBtn" class="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded-lg text-xs">Sync</button>
+            <button id="closeConsoleModal" class="bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded-lg text-xs">Close</button>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-2 mb-4">
+          <button class="tab-btn px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20" data-tab="create" aria-selected="true">Create</button>
+          <button class="tab-btn px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20" data-tab="codes" aria-selected="false">Codes</button>
+          <button class="tab-btn px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20" data-tab="settings" aria-selected="false">Settings</button>
+        </div>
+
+        <!-- Create Tab -->
+        <div id="tab-create" class="tab-panel">
+          <div class="grid md:grid-cols-2 gap-5">
+            <div class="bg-white/10 p-5 rounded-xl">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xl font-semibold text-white">Add New Code</h3>
+              </div>
+              <div id="dupError" class="hidden text-rose-300 text-sm mb-3">This code exists in the last sync.</div>
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-white/90 mb-1">Code (4 digits)</label>
+                  <input id="newCode" type="number" class="number-input bg-white/20 text-white p-2 rounded-lg w-full ring-focus"
+                         placeholder="e.g. 2468" min="0" max="9999"/>
+                </div>
+                <div>
+                  <label class="block text-white/90 mb-1">Certificate Details</label>
+                  <textarea id="newInfo" class="bg-white/20 text-white p-3 rounded-lg w-full h-32 ring-focus"
+                    placeholder="Example:
+Learner: Alex Kim
+Course: Intro to Data
+Issued: 2025-06-01
+Issuer: AMS Academy"></textarea>
+                </div>
+                <button id="assignBtn" class="bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white px-4 py-2 rounded-lg transition w-full font-semibold">
+                  Add via Form
+                </button>
+                <p class="hint text-xs">
+                  Opens your Google Form in a new tab, pre-filled. Submit to add it to your Sheet.
+                </p>
+              </div>
+            </div>
+
+            <div class="bg-white/10 p-5 rounded-xl">
+              <h3 class="text-xl font-semibold text-white mb-3">Quick Preview</h3>
+              <p class="hint text-sm mb-3">Search a specific code to preview it.</p>
+              <div class="flex gap-2 mb-3">
+                <input id="searchCodes" placeholder="Type a code like 0123" class="bg-white/20 text-white px-3 py-2 rounded-lg w-full ring-focus"/>
+                <button id="searchBtn" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg">Search</button>
+              </div>
+              <div class="overflow-auto max-h-64 rounded-lg border border-white/10">
+                <table class="w-full text-white/90">
+                  <thead class="border-b border-white/10 text-white">
+                    <tr>
+                      <th class="text-left py-2 px-3">Code</th>
+                      <th class="text-left py-2 px-3">Summary</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recentList"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Codes Tab -->
+        <div id="tab-codes" class="tab-panel hidden">
+          <div class="bg-white/10 p-5 rounded-xl">
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <h3 class="text-xl font-semibold text-white">Lookup</h3>
+              <div class="flex items-center gap-2">
+                <input id="codesTabQuery" placeholder="Enter exact code e.g. 0456" class="bg-white/20 text-white px-3 py-2 rounded-lg ring-focus w-48"/>
+                <button id="codesTabSearch" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg">Search</button>
+              </div>
+            </div>
+            <div class="overflow-auto max-h-80 rounded-lg border border-white/10">
+              <table class="w-full text-white/90">
+                <thead class="border-b border-white/10 text-white">
+                  <tr>
+                    <th class="text-left py-2 px-3">Code</th>
+                    <th class="text-left py-2 px-3">Summary</th>
+                  </tr>
+                </thead>
+                <tbody id="codesList"></tbody>
+              </table>
+            </div>
+            <p class="hint text-xs mt-3">Delete rows in your Sheet directly. Press Sync after changes.</p>
+          </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="tab-settings" class="tab-panel hidden">
+          <div class="bg-white/10 p-5 rounded-xl space-y-4">
+            <h3 class="text-xl font-semibold text-white">Settings</h3>
+
+            <div class="bg-white/10 rounded-lg p-3">
+              <p class="text-white/90 mb-2">Data source</p>
+              <div class="flex flex-wrap gap-3">
+                <label class="opt bg-white/10 hover:bg-white/20 text-white px-3 py-2 rounded flex items-center gap-2">
+                  <input type="radio" name="source" id="srcCsv" value="csv" class="accent-indigo-500">
+                  Published CSV (Sheet)
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-white/90 mb-1">Sheet CSV URL</label>
+              <input id="sheetCsvInput" type="url" class="bg-white/20 text-white p-2 rounded-lg w-full ring-focus"
+                placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"/>
+              <div class="flex gap-2 mt-2">
+                <button id="testCsvBtn" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-xs">Open CSV</button>
+                <button id="loadCsvBtn" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-xs">Sync Sheet Now</button>
+              </div>
+              <p class="hint text-xs mt-2">We’ll fetch, parse, and cache the latest data.</p>
+            </div>
+
+            <div>
+              <label class="block text-white/90 mb-1">Prefilled Form link</label>
+              <input id="formInput" type="url" class="bg-white/20 text-white p-2 rounded-lg w-full ring-focus"
+                placeholder="https://docs.google.com/forms/...&entry.xxxxx=0000&entry.yyyyy=Sample"/>
+              <div class="flex gap-2 mt-2">
+                <button id="testFormBtn" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-xs">Open Form</button>
+                <button id="copyFormBtn" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-xs">Copy Form Link</button>
+              </div>
+            </div>
+
+            <div class="flex gap-3">
+              <button id="saveConfig" class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg font-semibold">Save</button>
+              <button id="resetConfig" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-semibold">Reset</button>
+            </div>
+            <p class="hint text-xs">No backend. Reads directly from your published CSV.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Password
+    const ADMIN_PASSWORD = "admin123";
+
+    // Your provided CSV link
+    const YOUR_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vT8xaHA4mgvKIGsc-6ogSBQ1Fv3i9rR5k34tsb2c_i2v0EF6fQAY1iWFS9myNKRRFqUlXM3CJIQbIPc/pub?output=csv";
+
+    // Defaults
+    const DEFAULTS = {
+      sheetCsv: YOUR_CSV,
+      formPrefilled: "https://docs.google.com/forms/d/e/1FAIpQLSfAPdkw_dsnAF_v4njf2K3-wntuEwSq35qzCwxAYcMJa9ePPg/viewform?usp=pp_url&entry.1816309888=0000&entry.949029968=Sample"
+    };
+
+    // Config (persistent)
+    const cfg = {
+      sheetCsv: localStorage.getItem("cfg_sheetCsv") || DEFAULTS.sheetCsv,
+      formPrefilled: localStorage.getItem("cfg_form") || DEFAULTS.formPrefilled
+    };
+
+    // Data cache
+    let ROWS = []; // [{code, text}]
+    let lastSyncTime = null;
+    let autoSyncTimer = null;
+    let syncing = false;
+
+    // Elements
+    const lookupCode = document.getElementById("lookupCode");
+    const lookupBtn = document.getElementById("lookupBtn");
+    const validContainer = document.getElementById("validContainer");
+    const invalidContainer = document.getElementById("invalidContainer");
+    const validContent = document.getElementById("validContent");
+    const validMeta = document.getElementById("validMeta");
+    const copyDetails = document.getElementById("copyDetails");
+    const syncStatus = document.getElementById("syncStatus");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const userSyncBtn = document.getElementById("userSyncBtn");
+
+    const openAdminBtn = document.getElementById("openAdminBtn");
+    const adminLoginModal = document.getElementById("adminLoginModal");
+    const closeLoginModal = document.getElementById("closeLoginModal");
+    const adminForm = document.getElementById("adminForm");
+    const adminPassword = document.getElementById("adminPassword");
+    const adminUnlockBtn = document.getElementById("adminUnlockBtn");
+    const adminPasswordError = document.getElementById("adminPasswordError");
+
+    const adminConsoleModal = document.getElementById("adminConsoleModal");
+    const closeConsoleModal = document.getElementById("closeConsoleModal");
+    const adminLockBadge = document.getElementById("adminLockBadge");
+    const adminSyncStatus = document.getElementById("adminSyncStatus");
+    const adminSyncBtn = document.getElementById("adminSyncBtn");
+
+    const tabPanels = {
+      create: document.getElementById("tab-create"),
+      codes: document.getElementById("tab-codes"),
+      settings: document.getElementById("tab-settings")
+    };
+    document.querySelectorAll(".tab-btn").forEach(btn=>{
+      btn.addEventListener("click", ()=> switchTab(btn.getAttribute("data-tab")));
+    });
+    function switchTab(name){
+      ["create","codes","settings"].forEach(key=>{
+        const panel = tabPanels[key];
+        const btn = document.querySelector(`.tab-btn[data-tab="${key}"]`);
+        if(key===name){ panel.classList.remove("hidden"); btn.setAttribute("aria-selected","true"); }
+        else { panel.classList.add("hidden"); btn.setAttribute("aria-selected","false"); }
+      });
+    }
+
+    // Create tab
+    const newCode = document.getElementById("newCode");
+    const newInfo = document.getElementById("newInfo");
+    const assignBtn = document.getElementById("assignBtn");
+    const dupError = document.getElementById("dupError");
+    const recentList = document.getElementById("recentList");
+    const searchCodes = document.getElementById("searchCodes");
+    const searchBtn = document.getElementById("searchBtn");
+
+    // Codes tab
+    const codesTabQuery = document.getElementById("codesTabQuery");
+    const codesTabSearch = document.getElementById("codesTabSearch");
+    const codesList = document.getElementById("codesList");
+
+    // Settings tab
+    const sheetCsvInput = document.getElementById("sheetCsvInput");
+    const testCsvBtn = document.getElementById("testCsvBtn");
+    const loadCsvBtn = document.getElementById("loadCsvBtn");
+    const formInput = document.getElementById("formInput");
+    const testFormBtn = document.getElementById("testFormBtn");
+    const copyFormBtn = document.getElementById("copyFormBtn");
+    const saveConfig = document.getElementById("saveConfig");
+    const resetConfig = document.getElementById("resetConfig");
+    const srcCsv = document.getElementById("srcCsv");
+
+    // UI helpers
+    function setMainStatus(text, tone){
+      const time = lastSyncTime ? ` • ${new Date(lastSyncTime).toLocaleTimeString()}` : "";
+      syncStatus.textContent = text + time;
+      syncStatus.className = "text-xs px-2 py-1 rounded " + (
+        tone==="ok" ? "bg-emerald-400/20 text-emerald-200" :
+        tone==="warn" ? "bg-amber-400/20 text-amber-200" :
+        tone==="err" ? "bg-rose-400/20 text-rose-200" :
+        "bg-white/10 text-white/80"
+      );
+    }
+    function setAdminStatus(count, tone){
+      const time = lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString() : "—";
+      adminSyncStatus.textContent = `Synced ${count} • ${time}`;
+      adminSyncStatus.className = "text-xs px-2 py-1 rounded " + (
+        tone==="ok" ? "bg-emerald-400/20 text-emerald-200" :
+        tone==="warn" ? "bg-amber-400/20 text-amber-200" :
+        tone==="err" ? "bg-rose-400/20 text-rose-200" :
+        "bg-white/10 text-white/80"
+      );
+    }
+
+    // CSV parsing (handles quotes and commas)
+    function parseCSV(text){
+      const rows = [];
+      let i = 0, field = "", row = [], inQuotes = false;
+      while(i < text.length){
+        const ch = text[i];
+        if(inQuotes){
+          if(ch === '"'){
+            if(text[i+1] === '"'){ field += '"'; i++; }
+            else { inQuotes = false; }
+          }else field += ch;
+        }else{
+          if(ch === '"'){ inQuotes = true; }
+          else if(ch === ','){ row.push(field); field = ""; }
+          else if(ch === '\n' || ch === '\r'){
+            if(field.length>0 || row.length>0){ row.push(field); rows.push(row); row = []; field = ""; }
+            if(ch === '\r' && text[i+1] === '\n') i++;
+          }else field += ch;
+        }
+        i++;
+      }
+      if(field.length>0 || row.length>0){ row.push(field); rows.push(row); }
+      return rows;
+    }
+
+    // Load CSV fresh and update state + cache
+    async function loadSheetCSV(){
+      if(!cfg.sheetCsv){ throw new Error("No CSV URL configured"); }
+      const res = await fetch(cfg.sheetCsv, { cache: "no-store" });
+      if(!res.ok) throw new Error("CSV fetch failed");
+      const text = await res.text();
+      const grid = parseCSV(text);
+      if(!grid || grid.length === 0) throw new Error("CSV empty");
+
+      // Auto-detect columns by header names
+      const headers = grid[0].map(h => (h || "").trim().toLowerCase());
+      const codeIdx = headers.findIndex(h => ["code","codes","certificate code","cert code","id"].includes(h));
+      const detailsIdx = headers.findIndex(h => ["details","text","info","description","certificate details"].includes(h));
+
+      // If headers not found, assume first two columns are code and details
+      const cIdx = codeIdx >= 0 ? codeIdx : 0;
+      const dIdx = detailsIdx >= 0 ? detailsIdx : 1;
+
+      const rows = grid.slice(1).filter(r => r && r.length>0);
+      const parsed = rows.map(r=>{
+        const rawCode = (r[cIdx] || "").toString().trim();
+        const normCode = rawCode.replace(/\D/g,"").padStart(4,"0").slice(-4);
+        const textVal = (r[dIdx] || "").toString().trim();
+        return { code: normCode, text: textVal };
+      }).filter(o => o.code && o.text);
+
+      ROWS = parsed;
+      lastSyncTime = Date.now();
+      setAdminStatus(ROWS.length, "ok");
+      setMainStatus(`Synced ${ROWS.length}`, "ok");
+
+      // Cache for quick startup and offline fallback
+      try{
+        localStorage.setItem("cache_rows", JSON.stringify(ROWS));
+        localStorage.setItem("cache_time", String(lastSyncTime));
+      }catch{}
+
+      return ROWS.length;
+    }
+
+    // Hydrate from cache on load (non-blocking)
+    (function hydrateFromCache(){
+      try{
+        const cached = localStorage.getItem("cache_rows");
+        const time = localStorage.getItem("cache_time");
+        if(cached){
+          ROWS = JSON.parse(cached) || [];
+          lastSyncTime = Number(time) || null;
+          setAdminStatus(ROWS.length, ROWS.length ? "ok" : "");
+          setMainStatus(ROWS.length ? `Synced ${ROWS.length}` : "Ready", ROWS.length ? "ok" : "");
+        }
+      }catch{}
+    })();
+
+    // Build prefilled Form URL
+    function buildPrefilledURL(baseUrl, code, text){
+      try{
+        const url = new URL(baseUrl);
+        const entries = [...url.searchParams.keys()].filter(k=>k.startsWith("entry."));
+        if(entries.length===0) return baseUrl;
+        let codeKey = entries.find(k => url.searchParams.get(k)==="0000");
+        let textKey = entries.find(k => url.searchParams.get(k)==="Sample" && k!==codeKey);
+        if(!codeKey) codeKey = entries[0];
+        if(!textKey) textKey = entries.find(k=>k!==codeKey) || entries[0];
+        url.searchParams.set(codeKey, code);
+        url.searchParams.set(textKey, text);
+        return url.toString();
+      }catch{ return baseUrl; }
+    }
+
+    // Validator
+    function doLookup(){
+      const raw=lookupCode.value;
+      if(!raw || isNaN(raw) || raw<0 || raw>9999){ alert("Enter a valid 4-digit code (0000–9999)."); return; }
+      const code = raw.toString().padStart(4,"0");
+
+      const hit = ROWS.find(r => r.code === code);
+      if(hit){
+        validContent.textContent = hit.text || "";
+        validMeta.textContent = "Code " + code;
+        validContainer.classList.remove("hidden");
+        invalidContainer.classList.add("hidden");
+        setMainStatus(`Synced ${ROWS.length}`, "ok");
+      } else {
+        validContainer.classList.add("hidden");
+        invalidContainer.classList.remove("hidden");
+        setMainStatus(`Synced ${ROWS.length}`, "warn");
+      }
+    }
+
+    // Preview renderer
+    function renderPreview(list, target){
+      target.innerHTML="";
+      if(!list || list.length===0){
+        const tr=document.createElement("tr");
+        tr.innerHTML = `<td colspan="2" class="py-4 px-3 text-center text-white/60">No results</td>`;
+        target.appendChild(tr);
+        return;
+      }
+      list.forEach(({code,text})=>{
+        const short = (text||"").replace(/\n/g," ");
+        const trimmed = short.length>80 ? short.slice(0,80)+"…" : short;
+        const tr=document.createElement("tr");
+        tr.className="border-b border-white/10";
+        tr.innerHTML = `
+          <td class="py-2 px-3 font-semibold text-white">${code}</td>
+          <td class="py-2 px-3">${trimmed}</td>
+        `;
+        target.appendChild(tr);
+      });
+    }
+
+    async function runPreviewSearch(q, target){
+      const code = (q||"").replace(/\D/g,"").slice(0,4).padStart(4,"0");
+      if(!code || code.length!==4){ renderPreview([], target); return; }
+      const hit = ROWS.find(r=>r.code===code);
+      if(hit) renderPreview([{code, text:hit.text||""}], target);
+      else renderPreview([], target);
+    }
+
+    // Global sync (shared by user and admin buttons)
+    async function performSync(showAlert=false){
+      if(syncing) return;
+      syncing = true;
+      try{
+        const n = await loadSheetCSV();
+        if(showAlert) alert(`Loaded ${n} rows from the sheet.`);
+      }catch(e){
+        setAdminStatus(ROWS.length||0, "err");
+        setMainStatus("Sync failed", "err");
+        if(showAlert) alert("Couldn’t load the CSV. Make sure it is published to the web and accessible.");
+      }finally{
+        syncing = false;
+      }
+    }
+
+    // User page Sync button
+    userSyncBtn.addEventListener("click", ()=> performSync(true));
+
+    // Auto-sync on open and every 60 seconds
+    window.addEventListener("load", async ()=>{
+      setMainStatus("Syncing…", "");
+      await performSync(false);
+      if(autoSyncTimer) clearInterval(autoSyncTimer);
+      autoSyncTimer = setInterval(()=> performSync(false), 60_000);
+    });
+
+    // Events — validator
+    lookupBtn.addEventListener("click", doLookup);
+    lookupCode.addEventListener("keypress", e=>{ if(e.key==="Enter") doLookup(); });
+    lookupCode.addEventListener("input", function(){ if(this.value.length>4) this.value=this.value.slice(0,4); });
+    copyDetails.addEventListener("click", async ()=>{
+      const text = validContent.textContent.trim(); if(!text) return;
+      try{ await navigator.clipboard.writeText(text); copyDetails.textContent="Copied!"; setTimeout(()=>copyDetails.textContent="Copy details",1200); }
+      catch{ alert("Copy not available in this browser."); }
+    });
+    refreshBtn.addEventListener("click", ()=>{
+      validContainer.classList.add("hidden");
+      invalidContainer.classList.add("hidden");
+      setMainStatus(ROWS.length ? `Synced ${ROWS.length}` : "Ready", ROWS.length ? "ok" : "");
+      lookupCode.value = "";
+      lookupCode.focus();
+    });
+
+    // Admin open/close/unlock
+    openAdminBtn.addEventListener("click", ()=>{
+      adminPassword.value = "";
+      adminPasswordError.classList.add("hidden");
+      adminLoginModal.classList.add("active");
+      setTimeout(()=> adminPassword.focus(), 50);
+    });
+    closeLoginModal.addEventListener("click", ()=> adminLoginModal.classList.remove("active"));
+    adminForm.addEventListener("submit", (e)=>{
+      e.preventDefault();
+      if(adminPassword.value === ADMIN_PASSWORD){
+        sheetCsvInput.value = cfg.sheetCsv;
+        formInput.value = cfg.formPrefilled;
+        document.getElementById("srcCsv").checked = true;
+        adminLoginModal.classList.remove("active");
+        adminConsoleModal.classList.add("active");
+        adminLockBadge.textContent = "Unlocked";
+        setAdminStatus(ROWS.length||0, ROWS.length ? "ok" : "");
+      }else{
+        adminPasswordError.classList.remove("hidden");
+      }
+    });
+    adminUnlockBtn.addEventListener("click", (e)=>{ e.preventDefault(); adminForm.dispatchEvent(new Event("submit")); });
+    closeConsoleModal.addEventListener("click", ()=> adminConsoleModal.classList.remove("active"));
+    window.addEventListener("click",(e)=>{
+      if(e.target===adminLoginModal) adminLoginModal.classList.remove("active");
+      if(e.target===adminConsoleModal) adminConsoleModal.classList.remove("active");
+    });
+
+    // Admin: Sync (uses shared function)
+    adminSyncBtn.addEventListener("click", ()=> performSync(true));
+
+    // Create: Add via Form (prefill + open)
+    assignBtn.addEventListener("click", ()=>{
+      const codeVal = newCode.value;
+      const details = newInfo.value.trim();
+      if(!codeVal || isNaN(codeVal) || codeVal<0 || codeVal>9999){ alert("Enter a valid 4-digit code (0000–9999)."); return; }
+      if(!details){ alert("Please enter certificate details."); return; }
+      const code = codeVal.toString().padStart(4,"0");
+
+      // Duplicate hint using latest sync
+      const exists = ROWS.some(r=>r.code===code);
+      dupError.classList.toggle("hidden", !exists);
+
+      const url = buildPrefilledURL(cfg.formPrefilled, code, details);
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+
+    // Create: preview searches
+    searchBtn.addEventListener("click", ()=> runPreviewSearch(searchCodes.value, recentList));
+    searchCodes.addEventListener("keypress", e=>{ if(e.key==="Enter") runPreviewSearch(searchCodes.value, recentList); });
+    codesTabSearch.addEventListener("click", ()=> runPreviewSearch(codesTabQuery.value, codesList));
+    codesTabQuery.addEventListener("keypress", e=>{ if(e.key==="Enter") runPreviewSearch(codesTabQuery.value, codesList); });
+
+    // Settings
+    saveConfig.addEventListener("click", ()=>{
+      const csv = sheetCsvInput.value.trim();
+      const form = formInput.value.trim();
+      if(!csv){ alert("Please paste your Sheet CSV URL."); return; }
+      try{ new URL(csv); if(form) new URL(form); }catch{ alert("One of the links is not a valid URL."); return; }
+      cfg.sheetCsv = csv;
+      if(form) cfg.formPrefilled = form;
+      localStorage.setItem("cfg_sheetCsv", cfg.sheetCsv);
+      localStorage.setItem("cfg_form", cfg.formPrefilled);
+      alert("Settings saved. Press Sync to refresh.");
+    });
+    resetConfig.addEventListener("click", ()=>{
+      cfg.sheetCsv = DEFAULTS.sheetCsv;
+      cfg.formPrefilled = DEFAULTS.formPrefilled;
+      localStorage.setItem("cfg_sheetCsv", cfg.sheetCsv);
+      localStorage.setItem("cfg_form", cfg.formPrefilled);
+      sheetCsvInput.value = cfg.sheetCsv;
+      formInput.value = cfg.formPrefilled;
+      alert("Settings reset. Press Sync to reload.");
+    });
+    testCsvBtn.addEventListener("click", ()=>{
+      const link = sheetCsvInput.value.trim(); if(!link){ alert("Paste your CSV link first."); return; }
+      window.open(link, "_blank", "noopener,noreferrer");
+    });
+    loadCsvBtn.addEventListener("click", async ()=>{
+      const prev = loadCsvBtn.textContent;
+      loadCsvBtn.textContent = "Loading…";
+      try{
+        cfg.sheetCsv = sheetCsvInput.value.trim() || cfg.sheetCsv;
+        localStorage.setItem("cfg_sheetCsv", cfg.sheetCsv);
+        const n = await loadSheetCSV();
+        alert(`Loaded ${n} rows from the sheet.`);
+      }catch(e){
+        alert("Couldn’t load the CSV. Ensure it’s published and accessible.");
+      }finally{
+        loadCsvBtn.textContent = prev;
+      }
+    });
+    testFormBtn.addEventListener("click", ()=>{
+      const link = formInput.value.trim(); if(!link){ alert("Paste your Prefilled Form link first."); return; }
+      window.open(link, "_blank", "noopener,noreferrer");
+    });
+    copyFormBtn.addEventListener("click", async ()=>{
+      const link = formInput.value.trim(); if(!link){ alert("Paste your Prefilled Form link first."); return; }
+      try{ await navigator.clipboard.writeText(link); alert("Form link copied!"); }
+      catch{ alert("Copy not available in this browser."); }
+    });
+
+    // Initial status
+    setMainStatus("Ready","");
+
+    // Cleanup timer when leaving page
+    window.addEventListener("beforeunload", ()=> { if(autoSyncTimer) clearInterval(autoSyncTimer); });
+  </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9a5fa058203d6e10',t:'MTc2NDM5MzMxNy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
